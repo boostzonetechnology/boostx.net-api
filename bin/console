@@ -1,0 +1,202 @@
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+
+use App\Entity\Admin;
+use App\Entity\Plan;
+use App\Entity\Region;
+use App\Entity\SeoPage;
+use App\Entity\SeoSetting;
+use App\Service\SeoService;
+use App\Support\DoctrineFactory;
+use App\Support\Env;
+use Doctrine\Migrations\Tools\Console\Command as MigrationsCommand;
+use Symfony\Component\Console\Application;
+use Symfony\Component\Console\Command\Command;
+use Symfony\Component\Console\Input\InputInterface;
+use Symfony\Component\Console\Output\OutputInterface;
+
+require __DIR__ . '/../vendor/autoload.php';
+
+Env::load(dirname(__DIR__));
+
+$dependencyFactory = require __DIR__ . '/../config/migrations-db.php';
+
+$app = new Application('boostX Backend', '1.0.0');
+$app->setCatchExceptions(true);
+
+$app->addCommands([
+    new MigrationsCommand\DumpSchemaCommand($dependencyFactory),
+    new MigrationsCommand\ExecuteCommand($dependencyFactory),
+    new MigrationsCommand\GenerateCommand($dependencyFactory),
+    new MigrationsCommand\LatestCommand($dependencyFactory),
+    new MigrationsCommand\ListCommand($dependencyFactory),
+    new MigrationsCommand\MigrateCommand($dependencyFactory),
+    new MigrationsCommand\RollupCommand($dependencyFactory),
+    new MigrationsCommand\StatusCommand($dependencyFactory),
+    new MigrationsCommand\SyncMetadataCommand($dependencyFactory),
+    new MigrationsCommand\VersionCommand($dependencyFactory),
+]);
+
+$app->register('app:seed-admin')
+    ->setDescription('Seed super-admin from .env ADMIN_* values')
+    ->setCode(function (InputInterface $input, OutputInterface $output): int {
+        $em = DoctrineFactory::create();
+        $email = strtolower(trim((string) Env::get('ADMIN_EMAIL', '')));
+        $name = trim((string) Env::get('ADMIN_NAME', 'Super Admin'));
+        $password = (string) Env::get('ADMIN_PASSWORD', '');
+
+        if ($email === '' || $password === '') {
+            $output->writeln('<error>ADMIN_EMAIL and ADMIN_PASSWORD must be set in .env</error>');
+            return Command::FAILURE;
+        }
+
+        $repo = $em->getRepository(Admin::class);
+        $existing = $repo->findOneBy(['email' => $email]);
+        $hash = password_hash($password, PASSWORD_DEFAULT);
+
+        if ($existing instanceof Admin) {
+            $existing->setName($name);
+            $existing->setPasswordHash($hash);
+            $output->writeln('<info>Updated existing admin: ' . $email . '</info>');
+        } else {
+            $em->persist(new Admin($name, $email, $hash));
+            $output->writeln('<info>Created admin: ' . $email . '</info>');
+        }
+
+        $em->flush();
+
+        return Command::SUCCESS;
+    });
+
+$app->register('app:seed-seo')
+    ->setDescription('Seed SEO pages (defaults enabled) + llms intro from config/seo_pages.php')
+    ->setCode(function (InputInterface $input, OutputInterface $output): int {
+        $em = DoctrineFactory::create();
+        /** @var list<array{path: string, title: string, description: string, section: string}> $rows */
+        $rows = require dirname(__DIR__) . '/config/seo_pages.php';
+        $created = 0;
+        $skipped = 0;
+        $sort = 10;
+
+        foreach ($rows as $row) {
+            $path = SeoPage::normalizePath((string) $row['path']);
+            $existing = $em->getRepository(SeoPage::class)->findOneBy(['path' => $path]);
+            if ($existing instanceof SeoPage) {
+                $skipped++;
+                continue;
+            }
+            $em->persist(new SeoPage(
+                $path,
+                (string) $row['title'],
+                (string) $row['description'],
+                (string) $row['section'],
+                $sort,
+                true,
+            ));
+            $sort += 10;
+            $created++;
+        }
+
+        $introKey = SeoService::SETTING_LLMS_INTRO;
+        $intro = $em->find(SeoSetting::class, $introKey);
+        if (!$intro instanceof SeoSetting) {
+            $em->persist(new SeoSetting(
+                $introKey,
+                'The restaurant operating system for next-gen restaurants. POS, online ordering, inventory, kitchen display, riders, analytics, and more — 0% commission.'
+            ));
+            $output->writeln('<info>Created llms_intro setting</info>');
+        }
+
+        $em->flush();
+        $output->writeln("<info>SEO pages created: {$created}, skipped existing: {$skipped}</info>");
+
+        return Command::SUCCESS;
+    });
+
+$app->register('app:seed-pricing')
+    ->setDescription('Seed PK region (if missing) + default Starter/Professional/Enterprise plans')
+    ->setCode(function (InputInterface $input, OutputInterface $output): int {
+        $em = DoctrineFactory::create();
+        $code = strtoupper(trim((string) Env::get('DEFAULT_REGION_CODE', 'PK')));
+
+        $region = $em->getRepository(Region::class)->findOneBy(['countryCode' => $code]);
+        if (!$region instanceof Region) {
+            $region = new Region('Pakistan', $code, 'PKR', 'Rs', 0, true);
+            $em->persist($region);
+            $em->flush();
+            $output->writeln("<info>Created region {$code}</info>");
+        } else {
+            $output->writeln("<info>Using existing region {$code} (id {$region->getId()})</info>");
+        }
+
+        /** @var list<array<string, mixed>> $rows */
+        $rows = require dirname(__DIR__) . '/config/pricing_plans.php';
+        $created = 0;
+        $updated = 0;
+
+        foreach ($rows as $row) {
+            $slug = (string) $row['slug'];
+            $existing = $em->getRepository(Plan::class)->findOneBy([
+                'region' => $region,
+                'slug' => $slug,
+            ]);
+
+            $features = is_array($row['features'] ?? null)
+                ? implode("\n", $row['features'])
+                : (string) ($row['features'] ?? '');
+            $price = number_format((float) $row['price'], 2, '.', '');
+
+            if ($existing instanceof Plan) {
+                $existing->setName((string) $row['name']);
+                $existing->setPrice($price);
+                $existing->setBillingPeriod((string) ($row['billing_period'] ?? 'monthly'));
+                $existing->setFeatures($features !== '' ? $features : null);
+                $existing->setDescription((string) ($row['description'] ?? ''));
+                $existing->setIsHighlighted((bool) ($row['is_highlighted'] ?? false));
+                $existing->setDisplayPrice((string) ($row['display_price'] ?? ''));
+                $existing->setPeriodLabel((string) ($row['period_label'] ?? ''));
+                $existing->setSortOrder((int) ($row['sort_order'] ?? 0));
+                $existing->setIsEnabled(true);
+                $updated++;
+            } else {
+                $em->persist(new Plan(
+                    $region,
+                    (string) $row['name'],
+                    $slug,
+                    $price,
+                    (string) ($row['billing_period'] ?? 'monthly'),
+                    $features !== '' ? $features : null,
+                    (int) ($row['sort_order'] ?? 0),
+                    true,
+                    (string) ($row['description'] ?? ''),
+                    (bool) ($row['is_highlighted'] ?? false),
+                    (string) ($row['display_price'] ?? ''),
+                    (string) ($row['period_label'] ?? ''),
+                ));
+                $created++;
+            }
+        }
+
+        $em->flush();
+        $output->writeln("<info>Plans created: {$created}, updated: {$updated}</info>");
+
+        $keepSlugs = array_map(static fn (array $row): string => (string) $row['slug'], $rows);
+        $allForRegion = $em->getRepository(Plan::class)->findBy(['region' => $region]);
+        $disabled = 0;
+        foreach ($allForRegion as $plan) {
+            if (!in_array($plan->getSlug(), $keepSlugs, true) && $plan->isEnabled()) {
+                $plan->setIsEnabled(false);
+                $disabled++;
+            }
+        }
+        if ($disabled > 0) {
+            $em->flush();
+            $output->writeln("<comment>Disabled {$disabled} non-default plan(s) for {$code}</comment>");
+        }
+
+        return Command::SUCCESS;
+    });
+
+$app->run();

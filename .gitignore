@@ -1,0 +1,5 @@
+vendor/
+.env
+var/
+public/uploads/blog/*
+!public/uploads/blog/.gitkeep
