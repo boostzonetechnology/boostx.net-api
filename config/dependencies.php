@@ -14,6 +14,7 @@ use App\Controller\SeoController;
 use App\Controller\UploadController;
 use App\Middleware\AuthMiddleware;
 use App\Middleware\CorsMiddleware;
+use App\Module\RequestJoin\RequestJoinController;
 use App\Repository\AdminRepository;
 use App\Repository\AdminTokenRepository;
 use App\Repository\BlogCategoryRepository;
@@ -34,6 +35,7 @@ use App\Service\SeoService;
 use App\Service\UploadService;
 use App\Support\DoctrineFactory;
 use App\Support\Env;
+use Doctrine\DBAL\Connection;
 use Doctrine\ORM\EntityManagerInterface;
 use GuzzleHttp\Client;
 use Nyholm\Psr7\Factory\Psr17Factory;
@@ -43,7 +45,27 @@ use Oc\IpRegionDetector\Providers\IpWhoisProvider;
 use Psr\Container\ContainerInterface;
 
 return [
-    EntityManagerInterface::class => static fn (): EntityManagerInterface => DoctrineFactory::create(),
+
+    /*
+    |--------------------------------------------------------------------------
+    | Database
+    |--------------------------------------------------------------------------
+    */
+
+    EntityManagerInterface::class => static fn (): EntityManagerInterface =>
+        DoctrineFactory::create(),
+
+    Connection::class => static fn (
+        ContainerInterface $c
+    ): Connection => $c
+        ->get(EntityManagerInterface::class)
+        ->getConnection(),
+
+    /*
+    |--------------------------------------------------------------------------
+    | Repositories
+    |--------------------------------------------------------------------------
+    */
 
     AdminRepository::class => static fn (ContainerInterface $c): AdminRepository =>
         new AdminRepository($c->get(EntityManagerInterface::class)),
@@ -68,6 +90,12 @@ return [
 
     PlanRepository::class => static fn (ContainerInterface $c): PlanRepository =>
         new PlanRepository($c->get(EntityManagerInterface::class)),
+
+    /*
+    |--------------------------------------------------------------------------
+    | Services
+    |--------------------------------------------------------------------------
+    */
 
     AuthService::class => static fn (ContainerInterface $c): AuthService =>
         new AuthService(
@@ -127,6 +155,7 @@ return [
 
     GeoLocationService::class => static function (): GeoLocationService {
         $psr17 = new Psr17Factory();
+
         $httpClient = new Client([
             'timeout' => 5,
             'connect_timeout' => 5,
@@ -143,7 +172,9 @@ return [
     },
 
     GeoIpService::class => static fn (ContainerInterface $c): GeoIpService =>
-        new GeoIpService($c->get(GeoLocationService::class)),
+        new GeoIpService(
+            $c->get(GeoLocationService::class)
+        ),
 
     PricingService::class => static fn (ContainerInterface $c): PricingService =>
         new PricingService(
@@ -152,38 +183,84 @@ return [
             $c->get(PlanRepository::class),
         ),
 
+    /*
+    |--------------------------------------------------------------------------
+    | Middleware
+    |--------------------------------------------------------------------------
+    */
+
     AuthMiddleware::class => static fn (ContainerInterface $c): AuthMiddleware =>
-        new AuthMiddleware($c->get(AuthService::class)),
+        new AuthMiddleware(
+            $c->get(AuthService::class)
+        ),
 
     CorsMiddleware::class => static fn (): CorsMiddleware =>
-        new CorsMiddleware(Env::list('CORS_ORIGINS', 'http://127.0.0.1:5173,http://localhost:5173')),
+        new CorsMiddleware(
+            Env::list(
+                'CORS_ORIGINS',
+                'http://127.0.0.1:5173,http://localhost:5173'
+            )
+        ),
+
+    /*
+    |--------------------------------------------------------------------------
+    | Controllers
+    |--------------------------------------------------------------------------
+    */
 
     AuthController::class => static fn (ContainerInterface $c): AuthController =>
-        new AuthController($c->get(AuthService::class)),
+        new AuthController(
+            $c->get(AuthService::class)
+        ),
 
     CategoryController::class => static fn (ContainerInterface $c): CategoryController =>
-        new CategoryController($c->get(CategoryService::class)),
+        new CategoryController(
+            $c->get(CategoryService::class)
+        ),
 
     BlogController::class => static fn (ContainerInterface $c): BlogController =>
-        new BlogController($c->get(BlogService::class)),
+        new BlogController(
+            $c->get(BlogService::class)
+        ),
 
     UploadController::class => static fn (ContainerInterface $c): UploadController =>
-        new UploadController($c->get(UploadService::class)),
+        new UploadController(
+            $c->get(UploadService::class)
+        ),
 
     SeoController::class => static fn (ContainerInterface $c): SeoController =>
-        new SeoController($c->get(SeoService::class)),
+        new SeoController(
+            $c->get(SeoService::class)
+        ),
 
     AdminSeoController::class => static fn (ContainerInterface $c): AdminSeoController =>
-        new AdminSeoController($c->get(AdminSeoService::class)),
+        new AdminSeoController(
+            $c->get(AdminSeoService::class)
+        ),
 
     RegionController::class => static fn (ContainerInterface $c): RegionController =>
-        new RegionController($c->get(RegionService::class)),
+        new RegionController(
+            $c->get(RegionService::class)
+        ),
 
     PlanController::class => static fn (ContainerInterface $c): PlanController =>
-        new PlanController($c->get(PlanService::class)),
+        new PlanController(
+            $c->get(PlanService::class)
+        ),
 
     PricingController::class => static fn (ContainerInterface $c): PricingController =>
-        new PricingController($c->get(PricingService::class)),
+        new PricingController(
+            $c->get(PricingService::class)
+        ),
 
-    HealthController::class => static fn (): HealthController => new HealthController(),
+    HealthController::class => static fn (): HealthController =>
+        new HealthController(),
+
+    // Membership form submissions
+    RequestJoinController::class => static fn (
+        ContainerInterface $c
+    ): RequestJoinController => new RequestJoinController(
+        $c->get(Connection::class)
+    ),
+
 ];
