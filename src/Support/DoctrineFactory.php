@@ -27,7 +27,12 @@ final class DoctrineFactory
             proxyDir: dirname(__DIR__, 2) . '/var/cache/proxies',
             cache: $cache,
         );
-        $config->enableNativeLazyObjects(true);
+
+        // Native lazy objects need PHP 8.4+. On 8.2/8.3 keep classic proxies
+        // so cPanel hosts without 8.4 still boot (migrations, seeds, API).
+        if (PHP_VERSION_ID >= 80400) {
+            $config->enableNativeLazyObjects(true);
+        }
 
         $connection = DriverManager::getConnection([
             'driver' => 'pdo_mysql',
