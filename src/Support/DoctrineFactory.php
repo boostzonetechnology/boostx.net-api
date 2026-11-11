@@ -17,21 +17,36 @@ final class DoctrineFactory
     {
         $isDev = (bool) Env::get('APP_DEBUG', false);
         $paths = [dirname(__DIR__) . '/Entity'];
+        $cacheDir = dirname(__DIR__, 2) . '/var/cache/doctrine';
+        $proxyDir = dirname(__DIR__, 2) . '/var/cache/proxies';
+
+        foreach ([$cacheDir, $proxyDir] as $dir) {
+            if (!is_dir($dir) && !mkdir($dir, 0775, true) && !is_dir($dir)) {
+                throw new \RuntimeException('Cannot create Doctrine cache directory: ' . $dir);
+            }
+        }
+
         $cache = $isDev
             ? new ArrayAdapter()
-            : new FilesystemAdapter('doctrine', 0, dirname(__DIR__, 2) . '/var/cache/doctrine');
+            : new FilesystemAdapter('doctrine', 0, $cacheDir);
 
         $config = ORMSetup::createAttributeMetadataConfiguration(
             paths: $paths,
             isDevMode: $isDev,
-            proxyDir: dirname(__DIR__, 2) . '/var/cache/proxies',
+            proxyDir: $proxyDir,
             cache: $cache,
         );
 
-        // Native lazy objects need PHP 8.4+. On 8.2/8.3 keep classic proxies
-        // so cPanel hosts without 8.4 still boot (migrations, seeds, API).
+        // PHP 8.4+: native lazy objects.
+        // PHP 8.2/8.3: classic proxies — required for AdminToken->admin() etc.
+        // With APP_DEBUG=false, ORMSetup disables auto-generate; on cPanel that
+        // makes every authenticated request 500 unless we force generation.
         if (PHP_VERSION_ID >= 80400) {
             $config->enableNativeLazyObjects(true);
+        } else {
+            $config->setProxyDir($proxyDir);
+            $config->setProxyNamespace('App\\DoctrineProxies');
+            $config->setAutoGenerateProxyClasses(true);
         }
 
         $connection = DriverManager::getConnection([

@@ -20,11 +20,17 @@ class AdminTokenRepository extends EntityRepository
 
     public function findValid(string $token): ?AdminToken
     {
+        $now = new DateTimeImmutable();
+
         /** @var AdminToken|null $row */
-        $row = $this->find($token);
-        if (!$row || $row->isExpired()) {
-            return null;
-        }
+        $row = $this->createQueryBuilder('t')
+            ->innerJoin('t.admin', 'a')->addSelect('a')
+            ->where('t.token = :token')
+            ->andWhere('t.expiresAt > :now')
+            ->setParameter('token', $token)
+            ->setParameter('now', $now)
+            ->getQuery()
+            ->getOneOrNullResult();
 
         return $row;
     }
