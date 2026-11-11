@@ -14,6 +14,7 @@ use App\Controller\SeoController;
 use App\Controller\UploadController;
 use App\Middleware\AuthMiddleware;
 use App\Middleware\CorsMiddleware;
+use App\Module\Contact\ContactController;
 use App\Module\RequestJoin\RequestJoinController;
 use App\Repository\AdminRepository;
 use App\Repository\AdminTokenRepository;
@@ -260,6 +261,13 @@ return [
     RequestJoinController::class => static fn (
         ContainerInterface $c
     ): RequestJoinController => new RequestJoinController(
+        $c->get(Connection::class)
+    ),
+
+    // Contact form submissions
+    ContactController::class => static fn (
+        ContainerInterface $c
+    ): ContactController => new ContactController(
         $c->get(Connection::class)
     ),
 
