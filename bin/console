@@ -4,6 +4,7 @@
 declare(strict_types=1);
 
 use App\Entity\Admin;
+use App\Entity\Blog;
 use App\Entity\Plan;
 use App\Entity\Region;
 use App\Entity\SeoPage;
@@ -195,6 +196,35 @@ $app->register('app:seed-pricing')
             $em->flush();
             $output->writeln("<comment>Disabled {$disabled} non-default plan(s) for {$code}</comment>");
         }
+
+        return Command::SUCCESS;
+    });
+
+$app->register('app:unpublish-demo-blog')
+    ->setDescription('Unpublish the hello-boostx test post (or replace empty Hi content)')
+    ->setCode(function (InputInterface $input, OutputInterface $output): int {
+        $em = DoctrineFactory::create();
+        $repo = $em->getRepository(Blog::class);
+        /** @var list<Blog> $posts */
+        $posts = $repo->findBy(['slug' => 'hello-boostx']);
+        if ($posts === []) {
+            $posts = array_values(array_filter(
+                $repo->findAll(),
+                static fn (Blog $blog): bool => stripos($blog->getTitle(), 'Hello boostX') !== false
+                    || trim(strip_tags($blog->getContent())) === 'Hi'
+            ));
+        }
+
+        if ($posts === []) {
+            $output->writeln('<comment>No hello-boostx / Hi test posts found.</comment>');
+            return Command::SUCCESS;
+        }
+
+        foreach ($posts as $post) {
+            $post->setPublished(false);
+            $output->writeln('<info>Unpublished: ' . $post->getSlug() . '</info>');
+        }
+        $em->flush();
 
         return Command::SUCCESS;
     });
