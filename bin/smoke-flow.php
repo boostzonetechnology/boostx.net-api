@@ -32,9 +32,18 @@ echo "category ok id={$cat['id']}\n";
 /** @var BlogService $blogs */
 $blogs = $c->get(BlogService::class);
 $post = $blogs->create([
-    'title' => 'Hello boostX',
+    'title' => 'How BoostX connects POS, kitchen, and delivery',
     'category_id' => $cat['id'],
-    'content' => ['blocks' => [['id' => 't1', 'type' => 'text', 'html' => '<p>Hi</p>']]],
+    'excerpt' => 'A practical walkthrough of the restaurant operating workflow — from order capture to kitchen tickets and rider handoff.',
+    'content' => [
+        'blocks' => [
+            [
+                'id' => 't1',
+                'type' => 'text',
+                'html' => '<p>BoostX brings ordering, kitchen display, and delivery into one connected flow so restaurant teams spend less time switching tools.</p><p>This walkthrough covers how a ticket moves from POS or QR ordering into the kitchen, then out to riders when delivery is enabled.</p>',
+            ],
+        ],
+    ],
     'published' => true,
     'post_at' => date('Y-m-d H:i:s'),
 ]);
