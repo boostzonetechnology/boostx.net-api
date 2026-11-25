@@ -13,6 +13,7 @@ use App\Controller\RegionController;
 use App\Controller\SeoController;
 use App\Controller\UploadController;
 use App\Middleware\AuthMiddleware;
+use App\Module\Contact\ContactController;
 use App\Module\RequestJoin\RequestJoinController;
 use Slim\App;
 use Slim\Routing\RouteCollectorProxy;
@@ -27,6 +28,10 @@ return static function (App $app): void {
     $app->post(
         '/api/join-submissions',
         [RequestJoinController::class, 'store']
+    );
+    $app->post(
+        '/api/contact-submissions',
+        [ContactController::class, 'store']
     );
     $app->group('/api/auth', function (RouteCollectorProxy $group): void {
 
@@ -75,7 +80,9 @@ return static function (App $app): void {
         $group->get('/join-submissions',[RequestJoinController::class, 'adminIndex']);
         $group->put('/join-submissions/{id}',[RequestJoinController::class, 'adminUpdate']);
         $group->delete('/join-submissions/{id}',[RequestJoinController::class, 'adminDelete']);
-
+        $group->get('/contact-submissions', [ContactController::class, 'adminIndex']);
+        $group->put('/contact-submissions/{id}', [ContactController::class, 'adminUpdate']);
+        $group->delete('/contact-submissions/{id}', [ContactController::class, 'adminDelete']);
 
     })->add(AuthMiddleware::class);
 };
